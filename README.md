@@ -4,7 +4,7 @@ Where does the S&P 500 stand in its own history? One page, updated every
 weekday, with readings computed the way a person would have seen them on that
 day. No hindsight refits. A gauge, not a signal.
 
-Page: https://wwmgianclaww.github.io/whereami
+Page: https://whereitis.github.io/whereami
 
 ## What the reading is
 
