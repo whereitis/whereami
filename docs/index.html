@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>whereami</title>
+<meta name="description" content="Where does the S&P 500 stand in its own history, as a person would have seen it on the day. A gauge, not a signal.">
+<style>
+  :root { --bg:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781; --grid:#e1e0d9; --axis:#c3c2b7; --card:#f1efe8; --price:#2a78d6; --tr:#eb6834; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --muted:#898781; --grid:#2c2c2a; --axis:#383835; --card:#242422; --price:#3987e5; --tr:#d95926; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width:960px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:28px; font-weight:500; margin:0 0 4px; }
+  .sub { color:var(--ink2); margin:0 0 20px; }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:12px; margin:0 0 20px; }
+  .tile { background:var(--card); border-radius:8px; padding:14px 16px; }
+  .tile h2 { font-size:13px; font-weight:500; margin:0 0 6px; color:var(--ink2); display:flex; align-items:center; gap:8px; }
+  .swatch { width:12px; height:12px; border-radius:2px; display:inline-block; }
+  .big { font-size:34px; font-weight:500; line-height:1.1; font-variant-numeric:tabular-nums; }
+  .small { font-size:14px; color:var(--ink2); margin-top:6px; }
+  .chart { position:relative; }
+  svg { width:100%; height:auto; display:block; }
+  .tip { position:absolute; pointer-events:none; background:var(--bg); border:1px solid var(--axis); border-radius:6px; padding:6px 10px; font-size:13px; line-height:1.4; white-space:nowrap; display:none; }
+  .legend { display:flex; gap:20px; font-size:13px; color:var(--ink2); margin:6px 0 0; flex-wrap:wrap; }
+  .legend span { display:flex; align-items:center; gap:6px; }
+  .caveat { border-left:3px solid var(--axis); padding:4px 14px; margin:24px 0; color:var(--ink2); }
+  .caveat p { margin:8px 0; }
+  h3 { font-size:16px; font-weight:500; margin:24px 0 8px; }
+  ul { padding-left:20px; margin:0; }
+  li { margin:4px 0; }
+  footer { color:var(--muted); font-size:13px; margin-top:24px; }
+  a { color:inherit; }
+  .stamp { color:var(--muted); font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>whereami</h1>
+  <p class="sub">Where does the S&amp;P 500 stand in its own history? Each reading uses only the data a person had on that day. No hindsight refits.</p>
+
+  <div class="tiles" id="tiles"></div>
+
+  <div class="chart">
+    <svg id="chart" viewBox="0 0 960 380" role="img" aria-label="Gap from long-run trend in standard deviations, 1970 to today, price-only and total-return"></svg>
+    <div class="tip" id="tip"></div>
+  </div>
+  <div class="legend">
+    <span><i class="swatch" style="background:var(--price)"></i>price only</span>
+    <span><i class="swatch" style="background:var(--tr)"></i>total return (dividends reinvested)</span>
+    <span>dashed lines: plus and minus 1 and 2 standard deviations</span>
+  </div>
+  <p class="stamp" id="stamp"></p>
+
+  <div class="caveat">
+    <p><strong>This is a gauge, not a signal.</strong> Tested as seen on the day, this reading has shown no useful link to what the market did over the next 1, 3, 5 or 10 years. High readings have stayed high for years.</p>
+    <p>"Standard deviations" here is a ruler for the typical size of the gap, not a probability. The gap is a slow cycle, and half of any gap has taken about seven years to close on average. The percentile makes no bell-curve promise: it just counts past days with a smaller gap.</p>
+  </div>
+
+  <h3>How the reading is made</h3>
+  <ul>
+    <li>Take the S&amp;P 500 level, adjusted for inflation with the CPI (all urban consumers, not seasonally adjusted).</li>
+    <li>Fit a straight line through the logarithm of that level against time. A straight line in log space is a constant yearly growth rate.</li>
+    <li>For each date, fit the line and its typical gap (sigma) using only data up to that date. The reading is that date's gap divided by that sigma. The percentile is the share of earlier months in the same fit with a smaller gap.</li>
+    <li>Once a reading is published it is never recomputed. Each day's run only adds new dates, and it refuses to run at all if a recomputed old reading would drift.</li>
+    <li>Monthly points from 1950 to about ten years ago, daily points since. Readings begin in 1970 so every fit has at least twenty years behind it.</li>
+    <li>Price only uses the index level. Total return adds dividends reinvested, from Shiller's monthly data until 1987 and the official total-return index from 1988.</li>
+  </ul>
+
+  <footer id="foot"></footer>
+</main>
+
+<script>
+(async function () {
+  const res = await fetch('data.json', { cache: 'no-store' });
+  const data = await res.json();
+  const css = getComputedStyle(document.documentElement);
+  const col = { price: css.getPropertyValue('--price').trim(), tr: css.getPropertyValue('--tr').trim(),
+                grid: css.getPropertyValue('--grid').trim(), axis: css.getPropertyValue('--axis').trim(),
+                muted: css.getPropertyValue('--muted').trim(), ink2: css.getPropertyValue('--ink2').trim() };
+
+  const fmtZ = z => (z >= 0 ? '+' : '') + z.toFixed(2);
+  const fmtPct = p => (p >= 0 ? '+' : '') + p.toFixed(0) + '%';
+  const tiles = document.getElementById('tiles');
+  const mk = (label, color, t) => `
+    <div class="tile">
+      <h2><i class="swatch" style="background:${color}"></i>${label}</h2>
+      <div class="big">${fmtZ(t.z)}</div>
+      <div class="small">${fmtPct(t.pct_vs_trend)} versus trend. Larger than ${t.percentile.toFixed(1)}% of past months.</div>
+    </div>`;
+  tiles.innerHTML = mk('Price only', col.price, data.today.price) + mk('Total return', col.tr, data.today.total_return);
+  document.getElementById('stamp').textContent = `Reading for ${data.last_date}. Generated ${data.generated_utc.replace('T', ' ').replace('Z', ' UTC')}.`;
+
+  const pts = data.points;
+  const W = 960, H = 380, L = 44, R = 12, T = 12, B = 36;
+  const dates = pts.map(p => new Date(p[0] + 'T00:00:00Z'));
+  const x0 = Date.UTC(1970, 0, 1), x1 = dates[dates.length - 1].getTime();
+  const zAll = pts.flatMap(p => [p[1], p[2]]);
+  const zMax = Math.max(3, Math.ceil(Math.max(...zAll))), zMin = Math.min(-3, Math.floor(Math.min(...zAll)));
+  const sx = t => L + (W - L - R) * (t - x0) / (x1 - x0);
+  const sy = z => T + (H - T - B) * (zMax - z) / (zMax - zMin);
+
+  const svg = document.getElementById('chart');
+  const ns = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); (parent || svg).appendChild(e); return e; };
+
+  for (let z = zMin; z <= zMax; z++) {
+    const y = sy(z);
+    const band = Math.abs(z) === 1 || Math.abs(z) === 2;
+    el('line', { x1: L, x2: W - R, y1: y, y2: y, stroke: z === 0 ? col.axis : col.grid, 'stroke-width': z === 0 ? 1.5 : 1, 'stroke-dasharray': band ? '4 4' : '' });
+    const t = el('text', { x: L - 8, y: y + 4, 'text-anchor': 'end', 'font-size': 11, fill: col.muted }); t.textContent = (z > 0 ? '+' : '') + z;
+  }
+  for (let y = 1970; y <= new Date(x1).getUTCFullYear(); y += 5) {
+    const x = sx(Date.UTC(y, 0, 1));
+    const t = el('text', { x, y: H - B + 18, 'text-anchor': 'middle', 'font-size': 11, fill: col.muted }); t.textContent = y;
+  }
+  const path = (idx, color, width) => {
+    const d = pts.map((p, i) => (i ? 'L' : 'M') + sx(dates[i].getTime()).toFixed(1) + ' ' + sy(p[idx]).toFixed(1)).join('');
+    el('path', { d, fill: 'none', stroke: color, 'stroke-width': width, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' });
+  };
+  path(1, col.price, 1.6);
+  path(2, col.tr, 1.6);
+
+  const cursor = el('line', { x1: 0, x2: 0, y1: T, y2: H - B, stroke: col.axis, 'stroke-width': 1, opacity: 0 });
+  const dotP = el('circle', { r: 4, fill: col.price, opacity: 0 });
+  const dotT = el('circle', { r: 4, fill: col.tr, opacity: 0 });
+  const tip = document.getElementById('tip');
+  const wrap = svg.parentElement;
+  const show = (clientX, clientY) => {
+    const rect = svg.getBoundingClientRect();
+    const time = x0 + ((clientX - rect.left) / rect.width * W - L) / (W - L - R) * (x1 - x0);
+    let lo = 0, hi = dates.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (dates[mid].getTime() < time) lo = mid + 1; else hi = mid; }
+    if (lo > 0 && Math.abs(dates[lo - 1].getTime() - time) < Math.abs(dates[lo].getTime() - time)) lo -= 1;
+    const i = lo, p = pts[i], x = sx(dates[i].getTime());
+    cursor.setAttribute('x1', x); cursor.setAttribute('x2', x); cursor.setAttribute('opacity', 1);
+    dotP.setAttribute('cx', x); dotP.setAttribute('cy', sy(p[1])); dotP.setAttribute('opacity', 1);
+    dotT.setAttribute('cx', x); dotT.setAttribute('cy', sy(p[2])); dotT.setAttribute('opacity', 1);
+    tip.style.display = 'block';
+    tip.innerHTML = `<strong>${p[0]}</strong><br>price only ${fmtZ(p[1])} (pct ${p[3]})<br>total return ${fmtZ(p[2])} (pct ${p[4]})`;
+    const px = (x / W) * rect.width;
+    tip.style.left = (px + (px > rect.width * 0.7 ? -tip.offsetWidth - 12 : 12)) + 'px';
+    tip.style.top = (clientY - rect.top - 10) + 'px';
+  };
+  svg.addEventListener('mousemove', ev => show(ev.clientX, ev.clientY));
+  svg.addEventListener('touchstart', ev => { const t = ev.touches[0]; show(t.clientX, t.clientY); }, { passive: true });
+  svg.addEventListener('touchmove', ev => { const t = ev.touches[0]; show(t.clientX, t.clientY); }, { passive: true });
+  svg.addEventListener('mouseleave', () => { cursor.setAttribute('opacity', 0); dotP.setAttribute('opacity', 0); dotT.setAttribute('opacity', 0); tip.style.display = 'none'; });
+
+  const m = data.meta;
+  document.getElementById('foot').innerHTML =
+    `Fit through ${m.grid_last_complete_month} plus today: price-only trend ${m.price.slope_real_pct_per_year.toFixed(2)}% a year real, sigma ${m.price.sigma.toFixed(3)}; ` +
+    `total-return trend ${m.total_return.slope_real_pct_per_year.toFixed(2)}% a year real, sigma ${m.total_return.sigma.toFixed(3)}. ` +
+    `Daily points from ${m.daily_from}. CPI ${m.cpi_series} through ${m.cpi_last_month}. ` +
+    `Sources: <a href="https://datahub.io/core/s-and-p-500">Shiller monthly data</a>, <a href="https://fred.stlouisfed.org/series/SP500">FRED SP500</a>, <a href="https://fred.stlouisfed.org/series/CPIAUCNS">FRED CPIAUCNS</a>, S&amp;P 500 total-return index via Yahoo Finance. ` +
+    `Only derived readings are published here, no index levels. <a href="https://github.com/wwmgianclaww/whereami">Source code</a>.`;
+})();
+</script>
+</body>
+</html>
